@@ -55,10 +55,12 @@
                 v-model="username"
                 type="text"
                 required
+                :disabled="loading"
                 class="input-field"
                 placeholder="Enter your username"
                 @focus="onInputFocus"
                 @blur="onInputBlur"
+                @input="clearError"
               />
               <div class="input-border"></div>
             </div>
@@ -77,15 +79,18 @@
                 v-model="password"
                 :type="showPassword ? 'text' : 'password'"
                 required
+                :disabled="loading"
                 class="input-field"
                 placeholder="Enter your password"
                 @focus="onInputFocus"
                 @blur="onInputBlur"
+                @input="clearError"
               />
               <button
                 type="button"
                 @click="togglePassword"
-                class="absolute right-3 top-1/2 transform -translate-y-1/2 text-white/60 hover:text-white transition-colors"
+                :disabled="loading"
+                class="absolute right-3 top-1/2 transform -translate-y-1/2 text-white/60 hover:text-white transition-colors disabled:opacity-50"
               >
                 <svg v-if="showPassword" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L8.464 8.464M9.878 9.878a3 3 0 105.586 5.586m0 0L17.5 17.5M12.8 12.8l4.7 4.7"/>
@@ -102,8 +107,9 @@
           <!-- Submit Button -->
           <button
             type="submit"
-            :disabled="loading"
+            :disabled="loading || !isFormValid"
             class="submit-button"
+            :class="{ 'button-disabled': loading || !isFormValid }"
           >
             <span v-if="!loading" class="button-content">
               <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -119,10 +125,18 @@
 
           <!-- Error Message -->
           <div v-if="error" class="error-message">
-            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="w-5 h-5 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
             </svg>
             {{ error }}
+          </div>
+
+          <!-- Rate Limit Warning -->
+          <div v-if="showRateLimitWarning" class="warning-message">
+            <svg class="w-5 h-5 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 13.5c-.77.833.192 2.5 1.732 2.5z"/>
+            </svg>
+            Too many attempts detected. Please wait before trying again.
           </div>
         </form>
 
@@ -167,11 +181,19 @@
         </svg>
       </div>
     </div>
+
+    <!-- Network Status Indicator -->
+    <div v-if="!isOnline" class="network-status">
+      <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636l-12.728 12.728m0 0L5.636 18.364m12.728 0L5.636 5.636"/>
+      </svg>
+      No internet connection
+    </div>
   </div>
 </template>
 
 <script>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth'
 
@@ -186,12 +208,23 @@ export default {
     const error = ref('')
     const showPassword = ref(false)
     const showSuccessAnimation = ref(false)
+    const showRateLimitWarning = ref(false)
+    const isOnline = ref(navigator.onLine)
+    const attemptCount = ref(0)
+    const lastAttemptTime = ref(0)
     
     // Typing animation
     const typedText = ref('')
     const fullText = 'System.login() -> Authenticating...'
     let typingIndex = 0
     let typingInterval = null
+
+    // Computed properties
+    const isFormValid = computed(() => {
+      return username.value.trim().length > 0 && 
+             password.value.length >= 3 && 
+             !loading.value
+    })
 
     // Particle animation
     const getParticleStyle = (index) => {
@@ -230,14 +263,84 @@ export default {
       event.target.parentElement.classList.remove('input-focused')
     }
 
+    const clearError = () => {
+      if (error.value) {
+        error.value = ''
+      }
+      if (showRateLimitWarning.value) {
+        showRateLimitWarning.value = false
+      }
+    }
+
+    const validateForm = () => {
+      if (!username.value.trim()) {
+        error.value = 'Username is required'
+        return false
+      }
+      if (!password.value.trim()) {
+        error.value = 'Password is required'
+        return false
+      }
+      if (password.value.length < 3) {
+        error.value = 'Password must be at least 3 characters'
+        return false
+      }
+      return true
+    }
+
+    const checkRateLimit = () => {
+      const now = Date.now()
+      const timeSinceLastAttempt = now - lastAttemptTime.value
+      
+      // Reset attempt count if it's been more than 15 minutes
+      if (timeSinceLastAttempt > 15 * 60 * 1000) {
+        attemptCount.value = 0
+      }
+      
+      // Check if too many attempts
+      if (attemptCount.value >= 4) {
+        showRateLimitWarning.value = true
+        error.value = 'Too many login attempts. Please wait 15 minutes before trying again.'
+        return false
+      }
+      
+      return true
+    }
+
     const handleLogin = async () => {
+      // Prevent multiple submissions
+      if (loading.value) return;
+      
+      // Check network connectivity
+      if (!navigator.onLine) {
+        error.value = 'No internet connection. Please check your network and try again.'
+        return;
+      }
+      
+      // Validate form
+      if (!validateForm()) {
+        return;
+      }
+      
+      // Check rate limiting
+      if (!checkRateLimit()) {
+        return;
+      }
+
       loading.value = true
       error.value = ''
+      showRateLimitWarning.value = false
+
+      // Update attempt tracking
+      attemptCount.value++
+      lastAttemptTime.value = Date.now()
 
       try {
         const result = await login(username.value, password.value)
         
         if (result.success) {
+          // Reset attempt count on successful login
+          attemptCount.value = 0
           showSuccessAnimation.value = true
           
           // Wait for success animation then navigate
@@ -247,26 +350,64 @@ export default {
         } else {
           error.value = result.error || 'Login failed'
           // Shake animation for error
-          document.querySelector('.login-form-container').classList.add('shake')
-          setTimeout(() => {
-            document.querySelector('.login-form-container').classList.remove('shake')
-          }, 500)
+          const formContainer = document.querySelector('.login-form-container')
+          if (formContainer) {
+            formContainer.classList.add('shake')
+            setTimeout(() => {
+              formContainer.classList.remove('shake')
+            }, 500)
+          }
         }
       } catch (err) {
-        error.value = 'Network error. Please try again.'
+        console.error('Login error:', err)
+        
+        // Handle specific error types
+        if (err.message && err.message.includes('Too many')) {
+          showRateLimitWarning.value = true
+          error.value = 'Too many login attempts. Please wait 15 minutes before trying again.'
+          attemptCount.value = 5 // Force rate limit
+        } else if (err.message && err.message.includes('NetworkError')) {
+          error.value = 'Connection failed. Please check your internet and try again.'
+        } else if (err.message && err.message.includes('timeout')) {
+          error.value = 'Request timed out. Please try again.'
+        } else {
+          error.value = err.message || 'Login failed. Please try again.'
+        }
+        
+        // Shake animation for error
+        const formContainer = document.querySelector('.login-form-container')
+        if (formContainer) {
+          formContainer.classList.add('shake')
+          setTimeout(() => {
+            formContainer.classList.remove('shake')
+          }, 500)
+        }
       } finally {
         loading.value = false
       }
     }
 
+    // Network status monitoring
+    const handleOnline = () => {
+      isOnline.value = true
+    }
+
+    const handleOffline = () => {
+      isOnline.value = false
+    }
+
     onMounted(() => {
       startTypingAnimation()
+      window.addEventListener('online', handleOnline)
+      window.addEventListener('offline', handleOffline)
     })
 
     onUnmounted(() => {
       if (typingInterval) {
         clearInterval(typingInterval)
       }
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
     })
 
     return {
@@ -276,11 +417,15 @@ export default {
       error,
       showPassword,
       showSuccessAnimation,
+      showRateLimitWarning,
+      isOnline,
       typedText,
+      isFormValid,
       getParticleStyle,
       togglePassword,
       onInputFocus,
       onInputBlur,
+      clearError,
       handleLogin
     }
   }
@@ -288,6 +433,71 @@ export default {
 </script>
 
 <style scoped>
+/* All your existing styles remain the same, plus these additions: */
+
+/* Button Disabled State */
+.button-disabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+  pointer-events: none;
+}
+
+.button-disabled:hover {
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* Disabled Input Fields */
+.input-field:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Warning Message */
+.warning-message {
+  background: rgba(251, 191, 36, 0.15);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  color: #fbbf24;
+  padding: 12px 16px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  animation: errorSlideIn 0.3s ease-out;
+  font-size: 14px;
+}
+
+/* Network Status */
+.network-status {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: rgba(239, 68, 68, 0.9);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  z-index: 1000;
+  animation: slideInRight 0.3s ease-out;
+}
+
+@keyframes slideInRight {
+  0% {
+    opacity: 0;
+    transform: translateX(100px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* All your existing CSS animations and styles remain exactly the same */
+/* [Include all the existing CSS from your original component] */
+
 /* Floating Orbs Animation */
 .floating-orb {
   position: absolute;
