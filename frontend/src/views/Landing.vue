@@ -1157,12 +1157,16 @@ export default {
   position: relative;
   display: inline-block;
   margin: 0.5rem 0;
+  opacity: 1 !important; /* ✅ Force visible */
+  visibility: visible !important; /* ✅ Force visible */
 }
 
 .word-3d {
   display: inline-block;
   position: relative;
   transform-style: preserve-3d;
+  opacity: 1 !important; /* ✅ Force visible */
+  visibility: visible !important; /* ✅ Force visible */
 }
 
 /* Optimize Word - Holographic Blue */
@@ -1170,7 +1174,8 @@ export default {
   background: linear-gradient(45deg, #00d4ff, #3b82f6, #8b5cf6, #00d4ff);
   background-size: 400% 400%;
   -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  -webkit-text-fill-color: currentcolor;
+
   background-clip: text;
   animation: holographic-flow 4s ease-in-out infinite;
   filter: drop-shadow(0 0 20px rgba(59, 130, 246, 0.8));
@@ -1181,7 +1186,8 @@ export default {
   background: linear-gradient(45deg, #8b5cf6, #a855f7, #c084fc, #8b5cf6);
   background-size: 300% 300%;
   -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  -webkit-text-fill-color: currentcolor;
+
   background-clip: text;
   animation: elegant-glow 3s ease-in-out infinite;
   filter: drop-shadow(0 0 15px rgba(139, 92, 246, 0.6));
@@ -1192,7 +1198,8 @@ export default {
   background: linear-gradient(45deg, #fbbf24, #f59e0b, #d97706, #fbbf24);
   background-size: 200% 200%;
   -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  -webkit-text-fill-color: currentcolor;
+
   background-clip: text;
   animation: electric-pulse 2s ease-in-out infinite;
   filter: drop-shadow(0 0 25px rgba(251, 191, 36, 0.9));
@@ -1205,6 +1212,8 @@ export default {
   transform-origin: center;
   transition: all 0.3s ease;
   position: relative;
+  opacity: 1; /* ✅ Force visible */
+  visibility: visible; /* ✅ Force visible */
 }
 
 .letter:hover {
@@ -2468,6 +2477,8 @@ export default {
 .gradient-text-mega {
   will-change: background-position;
 }
+
+
 
 /* Smooth Scrolling */
 html {
